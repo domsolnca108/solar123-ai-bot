@@ -1,11 +1,13 @@
 from flask import Flask, request, jsonify
-import openai
+from flask_cors import CORS
+from openai import OpenAI
 import os
 
 app = Flask(__name__)
+CORS(app)  # позволяет подключаться с Tilda
 
-# Берём ключ из переменной окружения на Render
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Подключаем OpenAI правильно
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
 Ты — «AI-помощник Дом Солнца», искусственный менеджер компании solar123.ru.
@@ -23,22 +25,40 @@ SYSTEM_PROMPT = """
 Отвечай по-русски.
 """
 
+# ----------- ДОБАВЛЕНО!!! -----------
+
+@app.route("/", methods=["GET"])
+def home():
+    return {
+        "status": "ok",
+        "bot": "solar123-ai-bot is running!",
+        "author": "Дом Солнца"
+    }
+
+# ------------------------------------
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
     user_message = data.get("message", "")
 
-    response = openai.ChatCompletion.create(
+    # Проверяем, есть ли ключ
+    if not os.getenv("OPENAI_API_KEY"):
+        return jsonify({"error": "OPENAI_API_KEY not set"}), 500
+
+    # Новый формат вызова OpenAI
+    completion = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
+            {"role": "user", "content": user_message}
         ]
     )
 
-    reply = response["choices"][0]["message"]["content"]
+    reply = completion.choices[0].message["content"]
     return jsonify({"reply": reply})
 
+
+# Локальный запуск
 if __name__ == "__main__":
-    # локальный запуск, Render сам подставит свой порт
     app.run(host="0.0.0.0", port=10000)
