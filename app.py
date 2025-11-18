@@ -1,26 +1,26 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import openai
+from openai import OpenAI
 import os
 
 app = Flask(__name__)
-CORS(app)  # включаем CORS, чтобы Tilda могла отправлять запросы
+CORS(app)
 
-# Берём ключ из переменной окружения на Render
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
 Ты — «AI-помощник Дом Солнца», искусственный менеджер компании solar123.ru.
 
 Твоя задача:
-1. Определить потребности клиента.
-2. Узнать: дом/бизнес, платеж за свет, отключения, регион.
-3. Рассчитать мощность СЭС.
-4. Объяснить выгоду как инвестицию.
+1. Определить потребности клиента (экономия, резерв, автономия, инвестиции).
+2. Спросить: тип объекта (дом/бизнес), средний платёж за электроэнергию,
+   есть ли отключения света, регион.
+3. Рассчитать примерную мощность СЭС и ориентировочную стоимость.
+4. Объяснить выгоду.
 5. Подобрать тип станции.
-6. Спросить телефон для замера.
+6. В конце — предложить бесплатный замер и попросить телефон.
 
-Отвечай коротко, по делу и по-русски.
+Говори простым языком. Отвечай по-русски.
 """
 
 @app.route("/chat", methods=["POST"])
@@ -28,7 +28,7 @@ def chat():
     data = request.get_json()
     user_message = data.get("message", "")
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -36,7 +36,7 @@ def chat():
         ]
     )
 
-    reply = response["choices"][0]["message"]["content"]
+    reply = response.choices[0].message.content
     return jsonify({"reply": reply})
 
 if __name__ == "__main__":
