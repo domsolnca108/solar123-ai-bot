@@ -6,16 +6,16 @@ import sqlite3
 import json
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DB_PATH = "sessions.db"
 
 
-# ------------------------------------
-# База данных
-# ------------------------------------
+# ------------------
+# DB INIT
+# ------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -35,11 +35,9 @@ def load_history(user_id):
     c.execute("SELECT history FROM sessions WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     conn.close()
-
     if row:
         return json.loads(row[0])
-    else:
-        return None
+    return []
 
 
 def save_history(user_id, history):
@@ -48,71 +46,54 @@ def save_history(user_id, history):
     c.execute("""
         INSERT OR REPLACE INTO sessions (user_id, history)
         VALUES (?, ?)
-    """, (user_id, json.dumps(history, ensure_ascii=False)))
+    """, (user_id, json.dumps(history)))
     conn.commit()
     conn.close()
 
 
-# ------------------------------------
-# SYSTEM PROMPT
-# ------------------------------------
 SYSTEM_PROMPT = """
-Ты — «AI-помощник Дом Солнца», менеджер компании Solar123.ru.
-
-Твоя миссия:
-1. Помнить клиента — объект, регион, платеж, имя, пожелания.
-2. Не задавать повторных вопросов, если данные уже есть.
-3. Помогать: считать мощность, стоимость, выгоду и окупаемость.
-4. Давать рекомендации по типу станции.
-5. Завершать предложением бесплатного расчёта инженера.
-Отвечай дружелюбно, спокойно, понятным языком.
+Ты — AI-помощник компании «Дом Солнца». 
+Ты запоминаешь, о каком объекте говорил клиент, регион, платежи, имя.
+Ты не повторяешь вопросы, если данные уже есть.
+Твой стиль: тёплый, уверенный, экспертный.
 """
 
 
-# ------------------------------------
-# Основной чат с памятью
-# ------------------------------------
+# ------------------
+# CHAT ENDPOINT
+# ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
-    user_message = data.get("message", "")
-    user_id = data.get("user_id")
 
-    if not user_id:
-        return jsonify({"error": "user_id обязателен"}), 400
+    # ---- ВАЖНО: защита от отсутствующих полей ----
+    user_id = str(data.get("user_id", "anonymous"))
+    user_message = data.get("message", "")
 
     # Загружаем историю
     history = load_history(user_id)
-    if not history:
-        history = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Добавляем сообщение клиента
-    history.append({"role": "user", "content": user_message})
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    messages.append({"role": "user", "content": user_message})
 
-    # Отправляем запрос к OpenAI
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=history,
-        temperature=0.7
+        messages=messages
     )
 
     reply = response.choices[0].message.content
 
-    # Сохраняем ответ бота в историю
+    # Сохраняем новую историю
+    history.append({"role": "user", "content": user_message})
     history.append({"role": "assistant", "content": reply})
-
-    # Обновляем базу данных
     save_history(user_id, history)
 
     return jsonify({"reply": reply})
 
 
-# ------------------------------------
-# Статус API
-# ------------------------------------
-@app.route("/", methods=["GET"])
+@app.route("/")
 def status():
-    return jsonify({"status": "ok"})
+    return "OK"
 
 
 if __name__ == "__main__":
