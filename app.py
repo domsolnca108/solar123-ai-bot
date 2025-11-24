@@ -27,7 +27,8 @@ def init_db():
     """)
     conn.commit()
     conn.close()
-
+    
+init_db()  # <-- Эта строка обязана быть ВНЕ функций, на верхнем уровне
 
 def load_history(user_id):
     conn = sqlite3.connect(DB_PATH)
